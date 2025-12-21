@@ -40,6 +40,8 @@
 
 const Parser::StateFamily Parser::family;
 
+/* On 16-bit wchar_t systems (MSYS2/Cygwin), surrogates pass through to terminal.cc */
+
 static void append_or_delete( Parser::ActionPointer act, Parser::Actions& vec )
 {
   assert( act );
@@ -125,6 +127,36 @@ void Parser::UTF8Parser::input( char c, Actions& ret )
     } else {
       /* parsed into pwc, accept */
       assert( bytes_parsed <= buf_len );
+
+#if WCHAR_MAX <= 0xFFFF
+      /* On 16-bit wchar_t systems (MSYS2/Cygwin), mbrtowc() has a bug where it
+         returns a high surrogate after consuming only 3 bytes of a 4-byte UTF-8
+         sequence. The 4th byte hasn't arrived yet. We need to wait for it. */
+      uint32_t pwcheck_early = static_cast<uint32_t>( pwc );
+      if ( ( pwcheck_early >= 0xD800 ) && ( pwcheck_early <= 0xDBFF ) &&
+           ( bytes_parsed == 3 ) && ( buf_len == 3 ) ) {
+        /* High surrogate but only 3 bytes - wait for the 4th byte */
+        total_bytes_parsed += buf_len;
+        continue;  /* Don't shift buffer, wait for more input */
+      }
+      if ( ( pwcheck_early >= 0xD800 ) && ( pwcheck_early <= 0xDBFF ) &&
+           ( bytes_parsed == 3 ) && ( buf_len == 4 ) ) {
+        /* High surrogate from 4-byte UTF-8 - decode full codepoint manually */
+        uint32_t codepoint = ( ( static_cast<uint32_t>( static_cast<unsigned char>( buf[0] ) ) & 0x07 ) << 18 ) |
+                             ( ( static_cast<uint32_t>( static_cast<unsigned char>( buf[1] ) ) & 0x3F ) << 12 ) |
+                             ( ( static_cast<uint32_t>( static_cast<unsigned char>( buf[2] ) ) & 0x3F ) << 6 ) |
+                             ( static_cast<uint32_t>( static_cast<unsigned char>( buf[3] ) ) & 0x3F );
+        wchar_t high_surr = static_cast<wchar_t>( 0xD800 + ( ( codepoint - 0x10000 ) >> 10 ) );
+        wchar_t low_surr = static_cast<wchar_t>( 0xDC00 + ( ( codepoint - 0x10000 ) & 0x3FF ) );
+        parser.input( high_surr, ret );
+        parser.input( low_surr, ret );
+        /* Consume all 4 bytes */
+        buf_len = 0;
+        total_bytes_parsed += 4;
+        continue;
+      }
+#endif
+
       memmove( buf, buf + bytes_parsed, buf_len - bytes_parsed );
       buf_len = buf_len - bytes_parsed;
     }
@@ -138,6 +170,10 @@ void Parser::UTF8Parser::input( char c, Actions& ret )
       pwc = (wchar_t)0xFFFD;
     }
 
+#if WCHAR_MAX <= 0xFFFF
+    /* On 16-bit wchar_t systems, don't replace surrogates with U+FFFD */
+    /* (Most surrogates are now handled above, but keep this for safety) */
+#else
     if ( ( pwcheck >= 0xD800 ) && ( pwcheck <= 0xDFFF ) ) { /* surrogate code point */
       /*
         OS X unfortunately allows these sequences without EILSEQ, but
@@ -146,6 +182,7 @@ void Parser::UTF8Parser::input( char c, Actions& ret )
       */
       pwc = (wchar_t)0xFFFD;
     }
+#endif
 
     parser.input( pwc, ret );
 

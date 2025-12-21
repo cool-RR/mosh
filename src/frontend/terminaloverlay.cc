@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 #include <cwchar>
 #include <list>
 #include <typeinfo>
@@ -39,6 +40,30 @@
 #include "src/frontend/terminaloverlay.h"
 
 using namespace Overlay;
+
+#if WCHAR_MAX <= 0xFFFF
+/* On systems with 16-bit wchar_t (e.g., MSYS2/Cygwin), characters above U+FFFF
+   (like emoji) are represented as UTF-16 surrogate pairs. */
+
+/* Calculate character width for a codepoint that may be above U+FFFF. */
+static int wcwidth_codepoint_overlay( uint32_t codepoint )
+{
+  if ( codepoint <= 0xFFFF ) {
+    return wcwidth( static_cast<wchar_t>( codepoint ) );
+  }
+  /* For characters above BMP (like emoji), assume width 2 */
+  if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
+    return 2; /* Emoji and symbols */
+  }
+  if ( codepoint >= 0x20000 && codepoint <= 0x2FFFF ) {
+    return 2; /* CJK Extension B and beyond */
+  }
+  return 1; /* Default to 1 for other supplementary characters */
+}
+
+/* Pending high surrogate for prediction engine */
+static wchar_t pending_high_surrogate_overlay = 0;
+#endif
 
 void ConditionalOverlayCell::apply( Framebuffer& fb, uint64_t confirmed_epoch, int row, bool flag ) const
 {
@@ -257,7 +282,41 @@ void NotificationEngine::apply( Framebuffer& fb ) const
     }
 
     wchar_t ch = *i;
-    int chwidth = ch == L'\0' ? -1 : wcwidth( ch );
+    int chwidth;
+#if WCHAR_MAX <= 0xFFFF
+    wchar_t high_surrogate = 0;
+    const uint32_t chcheck = ch;
+
+    if ( chcheck >= 0xD800 && chcheck <= 0xDBFF ) {
+      /* High surrogate - look ahead for low surrogate */
+      std::wstring::const_iterator next = i + 1;
+      if ( next != string_to_draw.end() ) {
+        wchar_t ch2 = *next;
+        uint32_t ch2check = ch2;
+        if ( ch2check >= 0xDC00 && ch2check <= 0xDFFF ) {
+          /* Valid surrogate pair */
+          uint32_t codepoint = ( ( ch & 0x3FF ) << 10 | ( ch2 & 0x3FF ) ) + 0x10000;
+          chwidth = wcwidth_codepoint_overlay( codepoint );
+          high_surrogate = ch;
+          ch = ch2;
+          i++; /* Skip the low surrogate in the next iteration */
+        } else {
+          /* Orphan high surrogate */
+          chwidth = -1;
+        }
+      } else {
+        /* High surrogate at end of string */
+        chwidth = -1;
+      }
+    } else if ( chcheck >= 0xDC00 && chcheck <= 0xDFFF ) {
+      /* Orphan low surrogate */
+      chwidth = -1;
+    } else {
+      chwidth = ch == L'\0' ? -1 : wcwidth( ch );
+    }
+#else
+    chwidth = ch == L'\0' ? -1 : wcwidth( ch );
+#endif
     Cell* this_cell = 0;
 
     switch ( chwidth ) {
@@ -269,6 +328,11 @@ void NotificationEngine::apply( Framebuffer& fb ) const
         this_cell->get_renditions().set_foreground_color( 7 );
         this_cell->get_renditions().set_background_color( 4 );
 
+#if WCHAR_MAX <= 0xFFFF
+        if ( high_surrogate != 0 ) {
+          this_cell->append( high_surrogate );
+        }
+#endif
         this_cell->append( ch );
         this_cell->set_wide( chwidth == 2 );
         combining_cell = this_cell;
@@ -658,6 +722,30 @@ void PredictionEngine::new_user_byte( char the_byte, const Framebuffer& fb )
 
       wchar_t ch = act.ch;
       /* XXX handle wide characters */
+
+#if WCHAR_MAX <= 0xFFFF
+      /* Handle UTF-16 surrogate pairs */
+      const uint32_t chcheck = ch;
+      if ( chcheck >= 0xD800 && chcheck <= 0xDBFF ) {
+        /* High surrogate - save and wait for low surrogate */
+        pending_high_surrogate_overlay = ch;
+        continue; /* Wait for next character */
+      } else if ( chcheck >= 0xDC00 && chcheck <= 0xDFFF ) {
+        /* Low surrogate */
+        if ( pending_high_surrogate_overlay != 0 ) {
+          /* Combined character - treat as unknown/wide for predictions */
+          pending_high_surrogate_overlay = 0;
+          become_tentative();
+          continue;
+        }
+        /* Orphan low surrogate - treat as unknown */
+        become_tentative();
+        continue;
+      } else if ( pending_high_surrogate_overlay != 0 ) {
+        /* Orphan high surrogate - ignore it */
+        pending_high_surrogate_overlay = 0;
+      }
+#endif
 
       if ( ch == 0x7f ) { /* backspace */
         //	fprintf( stderr, "Backspace.\n" );

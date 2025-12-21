@@ -41,6 +41,31 @@
 
 using namespace Terminal;
 
+#if WCHAR_MAX <= 0xFFFF
+/* On systems with 16-bit wchar_t (e.g., MSYS2/Cygwin), characters above U+FFFF
+   (like emoji) are represented as UTF-16 surrogate pairs. We need to track
+   high surrogates to combine them with low surrogates. */
+static wchar_t pending_high_surrogate_terminal = 0;
+
+/* Calculate character width for a codepoint that may be above U+FFFF.
+   On 16-bit wchar_t systems, wcwidth() can't handle values > 0xFFFF directly. */
+static int wcwidth_codepoint( uint32_t codepoint )
+{
+  if ( codepoint <= 0xFFFF ) {
+    return wcwidth( static_cast<wchar_t>( codepoint ) );
+  }
+  /* For characters above BMP (like emoji), assume width 2 */
+  /* This is a simplification; proper support would need Unicode width tables */
+  if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
+    return 2; /* Emoji and symbols */
+  }
+  if ( codepoint >= 0x20000 && codepoint <= 0x2FFFF ) {
+    return 2; /* CJK Extension B and beyond */
+  }
+  return 1; /* Default to 1 for other supplementary characters */
+}
+#endif
+
 Emulator::Emulator( size_t s_width, size_t s_height ) : fb( s_width, s_height ), dispatch(), user() {}
 
 std::string Emulator::read_octets_to_host( void )
@@ -59,13 +84,47 @@ void Emulator::print( const Parser::Print* act )
 {
   assert( act->char_present );
 
-  const wchar_t ch = act->ch;
+  wchar_t ch = act->ch;
+  int chwidth;
 
+#if WCHAR_MAX <= 0xFFFF
+  /* Handle UTF-16 surrogate pairs on 16-bit wchar_t systems */
+  const uint32_t chcheck = ch;
+  wchar_t high_surrogate_to_append = 0;
+
+  if ( chcheck >= 0xD800 && chcheck <= 0xDBFF ) {
+    /* High surrogate - save and wait for low surrogate */
+    pending_high_surrogate_terminal = ch;
+    return;
+  } else if ( chcheck >= 0xDC00 && chcheck <= 0xDFFF ) {
+    /* Low surrogate */
+    if ( pending_high_surrogate_terminal != 0 ) {
+      /* Combine with pending high surrogate */
+      uint32_t codepoint = ( ( pending_high_surrogate_terminal & 0x3FF ) << 10 |
+                             ( ch & 0x3FF ) ) + 0x10000;
+      high_surrogate_to_append = pending_high_surrogate_terminal;
+      pending_high_surrogate_terminal = 0;
+      chwidth = wcwidth_codepoint( codepoint );
+    } else {
+      /* Orphan low surrogate - treat as unprintable */
+      chwidth = -1;
+    }
+  } else {
+    /* Regular character - check for orphan high surrogate */
+    if ( pending_high_surrogate_terminal != 0 ) {
+      /* Orphan high surrogate - ignore it */
+      pending_high_surrogate_terminal = 0;
+    }
+    chwidth = ch == L'\0' ? -1 : ( Cell::isprint_iso8859_1( ch ) ? 1 : wcwidth( ch ) );
+  }
+#else
+  wchar_t high_surrogate_to_append = 0;
   /*
    * Check for printing ISO 8859-1 first, it's a cheap way to detect
    * some common narrow characters.
    */
-  const int chwidth = ch == L'\0' ? -1 : ( Cell::isprint_iso8859_1( ch ) ? 1 : wcwidth( ch ) );
+  chwidth = ch == L'\0' ? -1 : ( Cell::isprint_iso8859_1( ch ) ? 1 : wcwidth( ch ) );
+#endif
 
   Cell* this_cell = fb.get_mutable_cell();
 
@@ -103,6 +162,10 @@ void Emulator::print( const Parser::Print* act )
       }
 
       fb.reset_cell( this_cell );
+      /* For surrogate pairs, append both surrogates to form the complete character */
+      if ( high_surrogate_to_append != 0 ) {
+        this_cell->append( high_surrogate_to_append );
+      }
       this_cell->append( ch );
       this_cell->set_wide( chwidth == 2 ); /* chwidth had better be 1 or 2 here */
       fb.apply_renditions_to_cell( this_cell );

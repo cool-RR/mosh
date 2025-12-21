@@ -158,6 +158,36 @@ public:
       dest.push_back( static_cast<char>( c ) );
       return;
     }
+
+#if WCHAR_MAX <= 0xFFFF
+    /* Handle UTF-16 surrogates on 16-bit wchar_t systems */
+    static wchar_t pending_high_surrogate_str = 0;
+    uint32_t ccheck = static_cast<uint32_t>( c );
+
+    if ( ccheck >= 0xD800 && ccheck <= 0xDBFF ) {
+      /* High surrogate - buffer it */
+      pending_high_surrogate_str = c;
+      return;
+    } else if ( ccheck >= 0xDC00 && ccheck <= 0xDFFF ) {
+      /* Low surrogate - combine and encode as UTF-8 */
+      if ( pending_high_surrogate_str != 0 ) {
+        uint32_t codepoint = ( ( static_cast<uint32_t>( pending_high_surrogate_str ) & 0x3FF ) << 10 |
+                               ( ccheck & 0x3FF ) ) + 0x10000;
+        pending_high_surrogate_str = 0;
+        /* Encode as 4-byte UTF-8 */
+        dest.push_back( static_cast<char>( 0xF0 | ( ( codepoint >> 18 ) & 0x07 ) ) );
+        dest.push_back( static_cast<char>( 0x80 | ( ( codepoint >> 12 ) & 0x3F ) ) );
+        dest.push_back( static_cast<char>( 0x80 | ( ( codepoint >> 6 ) & 0x3F ) ) );
+        dest.push_back( static_cast<char>( 0x80 | ( codepoint & 0x3F ) ) );
+        return;
+      }
+      /* Orphan low surrogate - fall through to wcrtomb (will likely fail) */
+    } else if ( pending_high_surrogate_str != 0 ) {
+      /* Non-surrogate after high surrogate - orphan, ignore the high surrogate */
+      pending_high_surrogate_str = 0;
+    }
+#endif
+
     static mbstate_t ps = mbstate_t();
     char tmp[MB_LEN_MAX];
     size_t ignore = wcrtomb( NULL, 0, &ps );
@@ -173,6 +203,36 @@ public:
       contents.push_back( static_cast<char>( c ) );
       return;
     }
+
+#if WCHAR_MAX <= 0xFFFF
+    /* Handle UTF-16 surrogates on 16-bit wchar_t systems */
+    static wchar_t pending_high_surrogate = 0;
+    uint32_t ccheck = static_cast<uint32_t>( c );
+
+    if ( ccheck >= 0xD800 && ccheck <= 0xDBFF ) {
+      /* High surrogate - buffer it */
+      pending_high_surrogate = c;
+      return;
+    } else if ( ccheck >= 0xDC00 && ccheck <= 0xDFFF ) {
+      /* Low surrogate - combine and encode as UTF-8 */
+      if ( pending_high_surrogate != 0 ) {
+        uint32_t codepoint = ( ( static_cast<uint32_t>( pending_high_surrogate ) & 0x3FF ) << 10 |
+                               ( ccheck & 0x3FF ) ) + 0x10000;
+        pending_high_surrogate = 0;
+        /* Encode as 4-byte UTF-8 */
+        contents.push_back( static_cast<char>( 0xF0 | ( ( codepoint >> 18 ) & 0x07 ) ) );
+        contents.push_back( static_cast<char>( 0x80 | ( ( codepoint >> 12 ) & 0x3F ) ) );
+        contents.push_back( static_cast<char>( 0x80 | ( ( codepoint >> 6 ) & 0x3F ) ) );
+        contents.push_back( static_cast<char>( 0x80 | ( codepoint & 0x3F ) ) );
+        return;
+      }
+      /* Orphan low surrogate - fall through to wcrtomb (will likely fail) */
+    } else if ( pending_high_surrogate != 0 ) {
+      /* Non-surrogate after high surrogate - orphan, ignore the high surrogate */
+      pending_high_surrogate = 0;
+    }
+#endif
+
     static mbstate_t ps = mbstate_t();
     char tmp[MB_LEN_MAX];
     size_t ignore = wcrtomb( NULL, 0, &ps );
