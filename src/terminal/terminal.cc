@@ -56,6 +56,9 @@ static int wcwidth_codepoint( uint32_t codepoint )
   }
   /* For characters above BMP (like emoji), assume width 2 */
   /* This is a simplification; proper support would need Unicode width tables */
+  if ( codepoint >= 0x1FB00 && codepoint <= 0x1FBFF ) {
+    return 1; /* Symbols for Legacy Computing - single width block characters */
+  }
   if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
     return 2; /* Emoji and symbols */
   }

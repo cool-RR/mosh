@@ -52,6 +52,9 @@ static int wcwidth_codepoint_overlay( uint32_t codepoint )
     return wcwidth( static_cast<wchar_t>( codepoint ) );
   }
   /* For characters above BMP (like emoji), assume width 2 */
+  if ( codepoint >= 0x1FB00 && codepoint <= 0x1FBFF ) {
+    return 1; /* Symbols for Legacy Computing - single width block characters */
+  }
   if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
     return 2; /* Emoji and symbols */
   }
