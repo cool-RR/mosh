@@ -54,13 +54,29 @@ static int wcwidth_codepoint( uint32_t codepoint )
   if ( codepoint <= 0xFFFF ) {
     return wcwidth( static_cast<wchar_t>( codepoint ) );
   }
-  /* For characters above BMP (like emoji), assume width 2 */
-  /* This is a simplification; proper support would need Unicode width tables */
-  if ( codepoint >= 0x1FB00 && codepoint <= 0x1FBFF ) {
-    return 1; /* Symbols for Legacy Computing - single width block characters */
+  /* For characters above BMP, check specific blocks for correct width */
+  /* Based on Unicode East Asian Width property (UAX #11) */
+
+  /* Narrow blocks in the U+1F000-1FFFF range (return width 1) */
+  if ( codepoint >= 0x1F650 && codepoint <= 0x1F67F ) {
+    return 1; /* Ornamental Dingbats */
   }
+  if ( codepoint >= 0x1F700 && codepoint <= 0x1F77F ) {
+    return 1; /* Alchemical Symbols */
+  }
+  if ( codepoint >= 0x1F780 && codepoint <= 0x1F7FF ) {
+    return 1; /* Geometric Shapes Extended */
+  }
+  if ( codepoint >= 0x1F800 && codepoint <= 0x1F8FF ) {
+    return 1; /* Supplemental Arrows-C */
+  }
+  if ( codepoint >= 0x1FB00 && codepoint <= 0x1FBFF ) {
+    return 1; /* Symbols for Legacy Computing */
+  }
+
+  /* Wide blocks (emoji, CJK, etc.) */
   if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
-    return 2; /* Emoji and symbols */
+    return 2; /* Emoji and symbols (default for this range) */
   }
   if ( codepoint >= 0x20000 && codepoint <= 0x2FFFF ) {
     return 2; /* CJK Extension B and beyond */
