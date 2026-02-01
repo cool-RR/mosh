@@ -48,40 +48,67 @@ using namespace Terminal;
 static wchar_t pending_high_surrogate_terminal = 0;
 
 /* Calculate character width for a codepoint that may be above U+FFFF.
-   On 16-bit wchar_t systems, wcwidth() can't handle values > 0xFFFF directly. */
+   On 16-bit wchar_t systems, wcwidth() can't handle values > 0xFFFF directly.
+   Wide character table from wcwidth project (Unicode 17.0). */
 static int wcwidth_codepoint( uint32_t codepoint )
 {
   if ( codepoint <= 0xFFFF ) {
     return wcwidth( static_cast<wchar_t>( codepoint ) );
   }
-  /* For characters above BMP, check specific blocks for correct width */
-  /* Based on Unicode East Asian Width property (UAX #11) */
 
-  /* Narrow blocks in the U+1F000-1FFFF range (return width 1) */
-  if ( codepoint >= 0x1F650 && codepoint <= 0x1F67F ) {
-    return 1; /* Ornamental Dingbats */
-  }
-  if ( codepoint >= 0x1F700 && codepoint <= 0x1F77F ) {
-    return 1; /* Alchemical Symbols */
-  }
-  if ( codepoint >= 0x1F780 && codepoint <= 0x1F7FF ) {
-    return 1; /* Geometric Shapes Extended */
-  }
-  if ( codepoint >= 0x1F800 && codepoint <= 0x1F8FF ) {
-    return 1; /* Supplemental Arrows-C */
-  }
-  if ( codepoint >= 0x1FB00 && codepoint <= 0x1FBFF ) {
-    return 1; /* Symbols for Legacy Computing */
-  }
+  /* Wide characters in U+1F000-1FFFF (from wcwidth/table_wide.py Unicode 17.0) */
+  if ( codepoint == 0x1F004 ) return 2; /* Mahjong Tile Red Dragon */
+  if ( codepoint == 0x1F0CF ) return 2; /* Playing Card Black Joker */
+  if ( codepoint == 0x1F18E ) return 2; /* Negative Squared Ab */
+  if ( codepoint >= 0x1F191 && codepoint <= 0x1F19A ) return 2;
+  if ( codepoint >= 0x1F1E6 && codepoint <= 0x1F202 ) return 2; /* Regional Indicators */
+  if ( codepoint >= 0x1F210 && codepoint <= 0x1F23B ) return 2;
+  if ( codepoint >= 0x1F240 && codepoint <= 0x1F248 ) return 2;
+  if ( codepoint >= 0x1F250 && codepoint <= 0x1F251 ) return 2;
+  if ( codepoint >= 0x1F260 && codepoint <= 0x1F265 ) return 2;
+  if ( codepoint >= 0x1F300 && codepoint <= 0x1F320 ) return 2;
+  if ( codepoint >= 0x1F32D && codepoint <= 0x1F335 ) return 2;
+  if ( codepoint >= 0x1F337 && codepoint <= 0x1F37C ) return 2;
+  if ( codepoint >= 0x1F37E && codepoint <= 0x1F393 ) return 2;
+  if ( codepoint >= 0x1F3A0 && codepoint <= 0x1F3CA ) return 2;
+  if ( codepoint >= 0x1F3CF && codepoint <= 0x1F3D3 ) return 2;
+  if ( codepoint >= 0x1F3E0 && codepoint <= 0x1F3F0 ) return 2;
+  if ( codepoint == 0x1F3F4 ) return 2; /* Waving Black Flag */
+  if ( codepoint >= 0x1F3F8 && codepoint <= 0x1F43E ) return 2;
+  if ( codepoint == 0x1F440 ) return 2; /* Eyes */
+  if ( codepoint >= 0x1F442 && codepoint <= 0x1F4FC ) return 2;
+  if ( codepoint >= 0x1F4FF && codepoint <= 0x1F53D ) return 2;
+  if ( codepoint >= 0x1F54B && codepoint <= 0x1F54E ) return 2;
+  if ( codepoint >= 0x1F550 && codepoint <= 0x1F567 ) return 2;
+  if ( codepoint == 0x1F57A ) return 2; /* Man Dancing */
+  if ( codepoint >= 0x1F595 && codepoint <= 0x1F596 ) return 2;
+  if ( codepoint == 0x1F5A4 ) return 2; /* Black Heart */
+  if ( codepoint >= 0x1F5FB && codepoint <= 0x1F64F ) return 2;
+  if ( codepoint >= 0x1F680 && codepoint <= 0x1F6C5 ) return 2;
+  if ( codepoint == 0x1F6CC ) return 2; /* Sleeping Accommodation */
+  if ( codepoint >= 0x1F6D0 && codepoint <= 0x1F6D2 ) return 2;
+  if ( codepoint >= 0x1F6D5 && codepoint <= 0x1F6D8 ) return 2;
+  if ( codepoint >= 0x1F6DC && codepoint <= 0x1F6DF ) return 2;
+  if ( codepoint >= 0x1F6EB && codepoint <= 0x1F6EC ) return 2;
+  if ( codepoint >= 0x1F6F4 && codepoint <= 0x1F6FC ) return 2;
+  if ( codepoint >= 0x1F7E0 && codepoint <= 0x1F7EB ) return 2; /* Colored circles/squares */
+  if ( codepoint == 0x1F7F0 ) return 2; /* Heavy Equals Sign */
+  if ( codepoint >= 0x1F90C && codepoint <= 0x1F93A ) return 2;
+  if ( codepoint >= 0x1F93C && codepoint <= 0x1F945 ) return 2;
+  if ( codepoint >= 0x1F947 && codepoint <= 0x1F9FF ) return 2;
+  if ( codepoint >= 0x1FA70 && codepoint <= 0x1FA7C ) return 2;
+  if ( codepoint >= 0x1FA80 && codepoint <= 0x1FA8A ) return 2;
+  if ( codepoint >= 0x1FA8E && codepoint <= 0x1FAC6 ) return 2;
+  if ( codepoint == 0x1FAC8 ) return 2;
+  if ( codepoint >= 0x1FACD && codepoint <= 0x1FADC ) return 2;
+  if ( codepoint >= 0x1FADF && codepoint <= 0x1FAEA ) return 2;
+  if ( codepoint >= 0x1FAEF && codepoint <= 0x1FAF8 ) return 2;
 
-  /* Wide blocks (emoji, CJK, etc.) */
-  if ( codepoint >= 0x1F000 && codepoint <= 0x1FFFF ) {
-    return 2; /* Emoji and symbols (default for this range) */
-  }
-  if ( codepoint >= 0x20000 && codepoint <= 0x2FFFF ) {
-    return 2; /* CJK Extension B and beyond */
-  }
-  return 1; /* Default to 1 for other supplementary characters */
+  /* CJK Extension B and beyond */
+  if ( codepoint >= 0x20000 && codepoint <= 0x2FFFF ) return 2;
+
+  /* Everything else in supplementary planes is width 1 */
+  return 1;
 }
 #endif
 
