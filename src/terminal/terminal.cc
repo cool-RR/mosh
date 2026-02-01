@@ -244,7 +244,19 @@ void Emulator::print( const Parser::Print* act )
         combining_cell->append( ch );
       }
     } break;
-    case -1: /* unprintable character */
+    case -1: /* unprintable character - treat as width 1 to stay in sync with terminal */
+      /* Most terminals display unassigned codepoints as width 1. If we ignore them,
+         cursor position gets out of sync causing rendering artifacts. */
+      fb.reset_cell( this_cell );
+#if WCHAR_MAX <= 0xFFFF
+      if ( high_surrogate_to_append != 0 ) {
+        this_cell->append( high_surrogate_to_append );
+      }
+#endif
+      this_cell->append( ch );
+      this_cell->set_wide( false );
+      fb.apply_renditions_to_cell( this_cell );
+      fb.ds.move_col( 1, true, true );
       break;
     default:
       assert( !"unexpected character width from wcwidth()" );
