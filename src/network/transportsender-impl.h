@@ -53,7 +53,7 @@ TransportSender<MyState>::TransportSender( Connection* s_connection, MyState& in
     assumed_receiver_state( sent_states.begin() ), fragmenter(), next_ack_time( timestamp() ),
     next_send_time( timestamp() ), verbose( 0 ), shutdown_in_progress( false ), shutdown_tries( 0 ),
     shutdown_start( -1 ), ack_num( 0 ), pending_data_ack( false ), SEND_MINDELAY( 8 ), last_heard( 0 ), prng(),
-    mindelay_clock( -1 )
+    mindelay_clock( -1 ), coalesce_last_change( uint64_t( -1 ) ), coalesce_last_state( initial_state )
 {}
 
 /* Try to send roughly two frames per RTT, bounded by limits on frame rate */
@@ -180,6 +180,19 @@ void TransportSender<MyState>::tick( void )
       mindelay_clock = uint64_t( -1 );
     }
   } else if ( ( now >= next_send_time ) || ( now >= next_ack_time ) ) {
+    /* snail: defer a big, still-changing repaint so it lands in ONE frame */
+    if ( !( current_state == coalesce_last_state ) ) {
+      coalesce_last_change = now;
+      coalesce_last_state = current_state;
+    }
+    if ( COALESCE_ENABLE && ( diff.size() >= COALESCE_MIN_BYTES ) /* a repaint, not typing */
+         && ( now < coalesce_last_change + COALESCE_QUIET )        /* still painting */
+         && ( mindelay_clock != uint64_t( -1 ) )
+         && ( now < mindelay_clock + COALESCE_MAX )                /* within hold budget */
+         && ( now < next_ack_time ) ) {                           /* no ack pressure */
+      next_send_time = now + COALESCE_QUIET;                      /* re-check shortly */
+      return;
+    }
     /* Send diffs or ack */
     send_to_receiver( diff );
     mindelay_clock = uint64_t( -1 );

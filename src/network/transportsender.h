@@ -53,6 +53,13 @@ const int ACK_DELAY = 100;              /* ms before delayed ack */
 const int SHUTDOWN_RETRIES = 16;        /* number of shutdown packets to send before giving up */
 const int ACTIVE_RETRY_TIMEOUT = 10000; /* attempt to resend at frame rate */
 
+/* snail: coalesce a large, still-changing repaint into ONE frame instead of
+   shipping visible interim frames (the high-RTT top-to-bottom "wipe"). */
+const bool COALESCE_ENABLE = true;
+const int COALESCE_QUIET = 30;         /* ms of no change before a repaint is "settled" */
+const int COALESCE_MAX = 500;          /* ms max to hold a repaint before forcing a send */
+const size_t COALESCE_MIN_BYTES = 256; /* only coalesce diffs at least this big (skip typing) */
+
 template<class MyState>
 class TransportSender
 {
@@ -106,6 +113,10 @@ private:
   const std::string make_chaff( void );
 
   uint64_t mindelay_clock; /* time of first pending change to current state */
+
+  /* snail coalesce state */
+  uint64_t coalesce_last_change; /* last time current_state changed */
+  MyState coalesce_last_state;   /* current_state as of the previous send-tick */
 
 public:
   /* constructor */
